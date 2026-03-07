@@ -1,0 +1,10 @@
+services:
+  twitch-lurker:
+    build: .
+    restart: unless-stopped
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+    deploy:
+      resources:
+        limits:
+          memory: 64M

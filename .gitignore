@@ -1,0 +1,5 @@
+config.yaml
+compose.override.yml
+.env
+.claude/
+*.swp

@@ -1,0 +1,15 @@
+twitch:
+  user_id: "your-twitch-user-id"
+  username: your_twitch_username
+  client_id: "your-client-id"
+  access_token: "your-access-token"
+  refresh_interval: 18h
+  batch_size: 95
+  ignore_users:
+    - streamelements
+    - nightbot
+  ignore_channels: []
+
+telegram:
+  bot_token: "your-telegram-bot-token"
+  chat_id: 123456789
