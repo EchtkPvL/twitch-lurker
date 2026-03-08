@@ -106,7 +106,7 @@ func (l *Lurker) setupClients(channels []string) {
 			if l.ignoreUsers[strings.ToLower(msg.User.Name)] {
 				return
 			}
-			channel := strings.ToLower(msg.Channel)
+			channel := strings.ToLower(strings.TrimPrefix(msg.Channel, "#"))
 			if l.ignoreChannels[channel] {
 				return
 			}
