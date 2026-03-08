@@ -103,6 +103,10 @@ func (l *Lurker) setupClients(channels []string) {
 		client := twitch.NewAnonymousClient()
 
 		client.OnPrivateMessage(func(msg twitch.PrivateMessage) {
+			if !strings.Contains(strings.ToLower(msg.Message), username) {
+				return
+			}
+			log.Printf("[#%s] <%s>: %s", msg.Channel, msg.User.Name, msg.Message)
 			if l.ignoreUsers[strings.ToLower(msg.User.Name)] {
 				return
 			}
@@ -110,14 +114,7 @@ func (l *Lurker) setupClients(channels []string) {
 			if l.ignoreChannels[channel] {
 				return
 			}
-			if strings.Contains(strings.ToLower(msg.Message), username) {
-				name := msg.User.DisplayName
-				if name == "" {
-					name = msg.User.Name
-				}
-				log.Printf("[#%s] <%s>: %s", msg.Channel, name, msg.Message)
-				l.tg.SendMention(msg.Channel, name, msg.Message)
-			}
+			l.tg.SendMention(msg.Channel, msg.User.Name, msg.User.DisplayName, msg.Message)
 		})
 
 		client.OnUserNoticeMessage(func(msg twitch.UserNoticeMessage) {

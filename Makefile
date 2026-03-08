@@ -21,9 +21,12 @@ release:
 
 # Full deploy flow: review, test, push, release
 deploy:
-	@if [ -z "$(VERSION)" ]; then echo "Usage: make deploy VERSION=v1.0.0"; exit 1; fi
+	@echo "Latest tag: $$(git describe --tags --abbrev=0 2>/dev/null || echo 'none')"
+	@echo ""
 	git status
-	@read -p "Continue? [y/N] " confirm && [ "$$confirm" = y ] || exit 1
-	$(MAKE) test-build
-	git push
-	$(MAKE) release VERSION=$(VERSION)
+	@echo ""
+	@read -p "New version tag: " version && [ -n "$$version" ] || exit 1; \
+	read -p "Deploy $$version? [y/N] " confirm && [ "$$confirm" = y ] || exit 1; \
+	$(MAKE) test-build && \
+	git push && \
+	$(MAKE) release VERSION=$$version

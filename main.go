@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -16,14 +17,15 @@ type Config struct {
 }
 
 type TwitchConfig struct {
-	UserID          string        `yaml:"user_id"`
-	Username        string        `yaml:"username"`
-	ClientID        string        `yaml:"client_id"`
 	AccessToken     string        `yaml:"access_token"`
+	Username        string        `yaml:"username"`
 	RefreshInterval time.Duration `yaml:"refresh_interval"`
 	BatchSize       int           `yaml:"batch_size"`
 	IgnoreUsers     []string      `yaml:"ignore_users"`
 	IgnoreChannels  []string      `yaml:"ignore_channels"`
+	// resolved from token validation
+	ClientID string `yaml:"-"`
+	UserID   string `yaml:"-"`
 }
 
 type TelegramConfig struct {
@@ -53,6 +55,20 @@ func main() {
 	if cfg.Twitch.RefreshInterval == 0 {
 		cfg.Twitch.RefreshInterval = 18 * time.Hour
 	}
+
+	cfg.Twitch.AccessToken = strings.TrimPrefix(cfg.Twitch.AccessToken, "oauth:")
+
+	info, err := validateToken(cfg.Twitch.AccessToken)
+	if err != nil {
+		log.Fatalf("failed to validate twitch token: %v", err)
+	}
+	cfg.Twitch.ClientID = info.ClientID
+	cfg.Twitch.UserID = info.UserID
+	if cfg.Twitch.Username == "" {
+		cfg.Twitch.Username = info.Login
+	}
+	log.Printf("authenticated as %s (id: %s)", cfg.Twitch.Username, cfg.Twitch.UserID)
+
 	tg := NewTelegram(cfg.Telegram.BotToken, cfg.Telegram.ChatID)
 	lurker := NewLurker(cfg, tg)
 	lurker.Start()

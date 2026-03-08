@@ -29,10 +29,10 @@ A lightweight Go service that lurks in all your followed Twitch channels and sen
 ## Deployment
 
 ```bash
-make deploy VERSION=v1.0.0
+make deploy
 ```
 
-This will show `git status`, prompt for confirmation, test-build the Docker image, push to the remote, and tag a release that triggers GitHub Actions to build and push the image to GHCR.
+This will show the latest tag and `git status`, prompt for the new version tag, test-build the Docker image, push to the remote, and tag a release that triggers GitHub Actions to build and push the image to GHCR.
 
 Other targets:
 
@@ -49,10 +49,8 @@ See `config.yaml.example` for all options:
 
 ```yaml
 twitch:
-  user_id: "your-twitch-user-id"
-  username: your_twitch_username
-  client_id: "your-client-id"
   access_token: "your-access-token"
+  # username: optional_override
   refresh_interval: 18h
   batch_size: 95
   ignore_users:
@@ -67,10 +65,8 @@ telegram:
 
 | Field | Description | Default |
 |---|---|---|
-| `twitch.user_id` | Your Twitch user ID (numeric) | — |
-| `twitch.username` | Your Twitch username (used for mention matching) | — |
-| `twitch.client_id` | Twitch application client ID | — |
 | `twitch.access_token` | Twitch OAuth access token | — |
+| `twitch.username` | Override username for mention matching | auto-detected |
 | `twitch.refresh_interval` | How often to re-fetch followed channels | `18h` |
 | `twitch.batch_size` | Max channels per IRC client | `95` |
 | `twitch.ignore_users` | Usernames to ignore (bots, etc.) | `[]` |

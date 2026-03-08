@@ -1,8 +1,6 @@
 twitch:
-  user_id: "your-twitch-user-id"
-  username: your_twitch_username
-  client_id: "your-client-id"
   access_token: "your-access-token"
+  # username: optional_override
   refresh_interval: 18h
   batch_size: 95
   ignore_users:

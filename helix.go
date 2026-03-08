@@ -7,6 +7,37 @@ import (
 	"net/http"
 )
 
+type tokenInfo struct {
+	ClientID string `json:"client_id"`
+	Login    string `json:"login"`
+	UserID   string `json:"user_id"`
+}
+
+func validateToken(accessToken string) (*tokenInfo, error) {
+	req, err := http.NewRequest("GET", "https://id.twitch.tv/oauth2/validate", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "OAuth "+accessToken)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("token validation failed (%d): %s", resp.StatusCode, body)
+	}
+
+	var info tokenInfo
+	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
+		return nil, fmt.Errorf("failed to decode validate response: %w", err)
+	}
+	return &info, nil
+}
+
 type followedResponse struct {
 	Data       []followedChannel `json:"data"`
 	Pagination struct {
