@@ -23,8 +23,25 @@ A lightweight Go service that lurks in all your followed Twitch channels and sen
 
 3. Run with Docker Compose:
    ```bash
-   docker compose up -d --build
+   make build
    ```
+
+## Deployment
+
+```bash
+make deploy VERSION=v1.0.0
+```
+
+This will show `git status`, prompt for confirmation, test-build the Docker image, push to the remote, and tag a release that triggers GitHub Actions to build and push the image to GHCR.
+
+Other targets:
+
+| Command | Description |
+|---|---|
+| `make build` | Build and run locally with Docker Compose |
+| `make logs` | Follow container logs |
+| `make test-build` | Test the Docker image build locally |
+| `make release VERSION=v1.0.0` | Tag and push (triggers GHCR build) |
 
 ## Configuration
 
