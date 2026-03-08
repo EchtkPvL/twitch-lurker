@@ -1,5 +1,7 @@
 services:
   twitch-lurker:
+    # Uncomment to build from source instead of pulling the image
+    # build: .
     labels:
       - "com.centurylinklabs.watchtower.enable=false"
     deploy:
