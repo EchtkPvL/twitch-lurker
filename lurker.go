@@ -3,24 +3,28 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	twitch "github.com/gempir/go-twitch-irc/v4"
+	"gopkg.in/yaml.v3"
 )
 
 type Lurker struct {
 	cfg            Config
+	cfgPath        string
 	tg             *Telegram
 	clients        []*twitch.Client
-	mu             sync.Mutex
+	mu             sync.RWMutex
 	stopCh         chan struct{}
 	ignoreUsers    map[string]bool
 	ignoreChannels map[string]bool
 }
 
-func NewLurker(cfg Config, tg *Telegram) *Lurker {
+func NewLurker(cfg Config, cfgPath string, tg *Telegram) *Lurker {
 	ignoreUsers := make(map[string]bool)
 	for _, u := range cfg.Twitch.IgnoreUsers {
 		ignoreUsers[strings.ToLower(strings.TrimSpace(u))] = true
@@ -31,6 +35,7 @@ func NewLurker(cfg Config, tg *Telegram) *Lurker {
 	}
 	return &Lurker{
 		cfg:            cfg,
+		cfgPath:        cfgPath,
 		tg:             tg,
 		stopCh:         make(chan struct{}),
 		ignoreUsers:    ignoreUsers,
@@ -46,6 +51,7 @@ func (l *Lurker) Start() {
 	log.Printf("fetched %d followed channels", len(channels))
 	l.setupClients(channels)
 	go l.refreshLoop()
+	go l.watchConfig()
 }
 
 func (l *Lurker) Stop() {
@@ -107,11 +113,11 @@ func (l *Lurker) setupClients(channels []string) {
 				return
 			}
 			log.Printf("[#%s] <%s>: %s", msg.Channel, msg.User.Name, msg.Message)
-			if l.ignoreUsers[strings.ToLower(msg.User.Name)] {
-				return
-			}
-			channel := strings.ToLower(strings.TrimPrefix(msg.Channel, "#"))
-			if l.ignoreChannels[channel] {
+			l.mu.RLock()
+			ignoreUser := l.ignoreUsers[strings.ToLower(msg.User.Name)]
+			ignoreChan := l.ignoreChannels[strings.ToLower(strings.TrimPrefix(msg.Channel, "#"))]
+			l.mu.RUnlock()
+			if ignoreUser || ignoreChan {
 				return
 			}
 			l.tg.SendMention(msg.Channel, msg.User.Name, msg.User.DisplayName, msg.Message)
@@ -153,6 +159,87 @@ func (l *Lurker) setupClients(channels []string) {
 		}(i)
 
 		l.clients = append(l.clients, client)
+	}
+}
+
+func (l *Lurker) reloadConfig() {
+	data, err := os.ReadFile(l.cfgPath)
+	if err != nil {
+		log.Printf("config reload: failed to read file: %v", err)
+		return
+	}
+
+	var newCfg Config
+	if err := yaml.Unmarshal(data, &newCfg); err != nil {
+		log.Printf("config reload: invalid config, keeping old: %v", err)
+		return
+	}
+
+	if newCfg.Twitch.AccessToken == "" {
+		log.Printf("config reload: invalid config (empty access_token), keeping old")
+		return
+	}
+	if newCfg.Telegram.BotToken == "" || newCfg.Telegram.ChatID == 0 {
+		log.Printf("config reload: invalid config (missing telegram settings), keeping old")
+		return
+	}
+
+	ignoreUsers := make(map[string]bool)
+	for _, u := range newCfg.Twitch.IgnoreUsers {
+		ignoreUsers[strings.ToLower(strings.TrimSpace(u))] = true
+	}
+	ignoreChannels := make(map[string]bool)
+	for _, c := range newCfg.Twitch.IgnoreChannels {
+		ignoreChannels[strings.ToLower(strings.TrimSpace(c))] = true
+	}
+
+	l.mu.Lock()
+	l.ignoreUsers = ignoreUsers
+	l.ignoreChannels = ignoreChannels
+	l.mu.Unlock()
+
+	l.tg.Update(newCfg.Telegram.BotToken, newCfg.Telegram.ChatID)
+
+	log.Printf("config reloaded: %d ignored users, %d ignored channels",
+		len(ignoreUsers), len(ignoreChannels))
+}
+
+func (l *Lurker) watchConfig() {
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Printf("config watch: failed to create watcher: %v", err)
+		return
+	}
+
+	go func() {
+		defer watcher.Close()
+		var debounce <-chan time.Time
+		for {
+			select {
+			case event, ok := <-watcher.Events:
+				if !ok {
+					return
+				}
+				if event.Has(fsnotify.Write) || event.Has(fsnotify.Create) {
+					debounce = time.After(500 * time.Millisecond)
+				}
+			case <-debounce:
+				l.reloadConfig()
+			case err, ok := <-watcher.Errors:
+				if !ok {
+					return
+				}
+				log.Printf("config watch error: %v", err)
+			case <-l.stopCh:
+				return
+			}
+		}
+	}()
+
+	if err := watcher.Add(l.cfgPath); err != nil {
+		log.Printf("config watch: failed to watch %s: %v", l.cfgPath, err)
+	} else {
+		log.Printf("watching %s for changes", l.cfgPath)
 	}
 }
 

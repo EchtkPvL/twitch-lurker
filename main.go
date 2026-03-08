@@ -70,7 +70,7 @@ func main() {
 	log.Printf("authenticated as %s (id: %s)", cfg.Twitch.Username, cfg.Twitch.UserID)
 
 	tg := NewTelegram(cfg.Telegram.BotToken, cfg.Telegram.ChatID)
-	lurker := NewLurker(cfg, tg)
+	lurker := NewLurker(cfg, cfgPath, tg)
 	lurker.Start()
 
 	sigCh := make(chan os.Signal, 1)

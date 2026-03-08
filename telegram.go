@@ -6,15 +6,24 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 )
 
 type Telegram struct {
+	mu     sync.RWMutex
 	token  string
 	chatID int64
 }
 
 func NewTelegram(token string, chatID int64) *Telegram {
 	return &Telegram{token: token, chatID: chatID}
+}
+
+func (t *Telegram) Update(token string, chatID int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.token = token
+	t.chatID = chatID
 }
 
 func (t *Telegram) SendMention(channel, login, displayName, message string) {
@@ -56,9 +65,13 @@ func escAtMention(s string) string {
 }
 
 func (t *Telegram) send(text string) {
-	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", t.token)
+	t.mu.RLock()
+	token, chatID := t.token, t.chatID
+	t.mu.RUnlock()
+
+	apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage", token)
 	resp, err := http.PostForm(apiURL, url.Values{
-		"chat_id":    {fmt.Sprintf("%d", t.chatID)},
+		"chat_id":    {fmt.Sprintf("%d", chatID)},
 		"text":       {text},
 		"parse_mode": {"HTML"},
 		"link_preview_options": {`{"is_disabled":true}`},
