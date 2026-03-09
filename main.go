@@ -20,15 +20,38 @@ type Config struct {
 type TwitchConfig struct {
 	AccessToken     string        `yaml:"access_token"`
 	Username        string        `yaml:"username"`
+	MatchMode       string        `yaml:"match_mode"`
 	SubGiftReply    string        `yaml:"sub_gift_reply"`
 	RefreshInterval time.Duration `yaml:"refresh_interval"`
 	BatchSize       int           `yaml:"batch_size"`
-	Keywords        []string      `yaml:"keywords"`
+	Keywords        []Keyword     `yaml:"keywords"`
 	IgnoreUsers     []string      `yaml:"ignore_users"`
 	IgnoreChannels  []string      `yaml:"ignore_channels"`
 	// resolved from token validation
 	ClientID string `yaml:"-"`
 	UserID   string `yaml:"-"`
+}
+
+// Keyword supports both simple strings and objects in YAML:
+//
+//	keywords:
+//	  - BieberLAN
+//	  - word: NorthCon
+//	    mode: exact
+type Keyword struct {
+	Word string `yaml:"word"`
+	Mode string `yaml:"mode"`
+}
+
+func (k *Keyword) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var simple string
+	if err := unmarshal(&simple); err == nil {
+		k.Word = simple
+		k.Mode = ""
+		return nil
+	}
+	type plain Keyword
+	return unmarshal((*plain)(k))
 }
 
 type TelegramConfig struct {

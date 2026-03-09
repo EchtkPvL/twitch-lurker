@@ -51,14 +51,19 @@ See `config.yaml.example` for all options:
 twitch:
   access_token: "your-access-token"
   # username: optional_override
+  # match_mode: contains
   sub_gift_reply: "@{user} !!! bleedPurple CurseLit :>"
   refresh_interval: 18h
   batch_size: 95
+  keywords: []
+  # keywords:
+  #   - simple_keyword
+  #   - word: ExactMatch
+  #     mode: exact
   ignore_users:
     - streamelements
     - nightbot
   ignore_channels: []
-  keywords: []
 
 telegram:
   bot_token: "your-telegram-bot-token"
@@ -71,8 +76,9 @@ verbose: false
 |---|---|---|
 | `twitch.access_token` | Twitch OAuth access token | — |
 | `twitch.username` | Override username for mention matching | auto-detected |
+| `twitch.match_mode` | Username match mode: `contains` or `exact` | `contains` |
 | `twitch.sub_gift_reply` | Reply template for sub gifts (`{user}` is replaced) | `@{user} !!! bleedPurple CurseLit :>` |
-| `twitch.keywords` | Additional keywords to match (case-insensitive) | `[]` |
+| `twitch.keywords` | Additional keywords to match (string or `{word, mode}`) | `[]` |
 | `twitch.refresh_interval` | How often to re-fetch followed channels | `18h` |
 | `twitch.batch_size` | Max channels per IRC client | `95` |
 | `twitch.ignore_users` | Usernames to ignore (bots, etc.) | `[]` |
@@ -80,6 +86,9 @@ verbose: false
 | `telegram.bot_token` | Telegram Bot API token | — |
 | `telegram.chat_id` | Telegram chat ID to send notifications to | — |
 | `verbose` | Log raw IRC messages on matches and sub gifts | `false` |
+
+The Twitch access token requires the `user:read:follows` scope. Generate one here:
+https://twitch.echtkpvl.de/oauth?scope=user%3Aread%3Afollows
 
 ## License
 

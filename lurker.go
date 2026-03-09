@@ -19,9 +19,14 @@ type Lurker struct {
 	clients        []*twitch.Client
 	mu             sync.RWMutex
 	stopCh         chan struct{}
-	keywords       []string
+	keywords       []resolvedKeyword
 	ignoreUsers    map[string]bool
 	ignoreChannels map[string]bool
+}
+
+type resolvedKeyword struct {
+	word string
+	mode string // "contains" or "exact"
 }
 
 func NewLurker(cfg Config, cfgPath string, tg *Telegram) *Lurker {
@@ -33,19 +38,30 @@ func NewLurker(cfg Config, cfgPath string, tg *Telegram) *Lurker {
 	for _, c := range cfg.Twitch.IgnoreChannels {
 		ignoreChannels[strings.ToLower(strings.TrimSpace(c))] = true
 	}
-	keywords := make([]string, len(cfg.Twitch.Keywords))
-	for i, k := range cfg.Twitch.Keywords {
-		keywords[i] = strings.ToLower(strings.TrimSpace(k))
-	}
 	return &Lurker{
 		cfg:            cfg,
 		cfgPath:        cfgPath,
 		tg:             tg,
 		stopCh:         make(chan struct{}),
-		keywords:       keywords,
+		keywords:       resolveKeywords(cfg.Twitch.Keywords),
 		ignoreUsers:    ignoreUsers,
 		ignoreChannels: ignoreChannels,
 	}
+}
+
+func resolveKeywords(keywords []Keyword) []resolvedKeyword {
+	resolved := make([]resolvedKeyword, len(keywords))
+	for i, k := range keywords {
+		mode := k.Mode
+		if mode == "" {
+			mode = "contains"
+		}
+		resolved[i] = resolvedKeyword{
+			word: strings.ToLower(strings.TrimSpace(k.Word)),
+			mode: mode,
+		}
+	}
+	return resolved
 }
 
 func (l *Lurker) Start() {
@@ -109,13 +125,17 @@ func (l *Lurker) setupClients(channels []string) {
 	defer l.mu.Unlock()
 
 	username := strings.ToLower(l.cfg.Twitch.Username)
+	usernameMode := l.cfg.Twitch.MatchMode
+	if usernameMode == "" {
+		usernameMode = "contains"
+	}
 
 	for i, batch := range batches {
 		client := twitch.NewAnonymousClient()
 
 		client.OnPrivateMessage(func(msg twitch.PrivateMessage) {
 			msgLower := strings.ToLower(msg.Message)
-			if !l.matchesKeywords(msgLower, username) {
+			if !l.matchesKeywords(msgLower, username, usernameMode) {
 				return
 			}
 			log.Printf("[#%s] <%s>: %s", msg.Channel, msg.User.Name, msg.Message)
@@ -203,10 +223,7 @@ func (l *Lurker) reloadConfig() {
 		ignoreChannels[strings.ToLower(strings.TrimSpace(c))] = true
 	}
 
-	keywords := make([]string, len(newCfg.Twitch.Keywords))
-	for i, k := range newCfg.Twitch.Keywords {
-		keywords[i] = strings.ToLower(strings.TrimSpace(k))
-	}
+	keywords := resolveKeywords(newCfg.Twitch.Keywords)
 
 	subGiftReply := newCfg.Twitch.SubGiftReply
 	if subGiftReply == "" {
@@ -265,18 +282,50 @@ func (l *Lurker) watchConfig() {
 	}
 }
 
-func (l *Lurker) matchesKeywords(msgLower, username string) bool {
-	if strings.Contains(msgLower, username) {
+func (l *Lurker) matchesKeywords(msgLower, username, usernameMode string) bool {
+	if matchWord(msgLower, username, usernameMode) {
 		return true
 	}
 	l.mu.RLock()
 	defer l.mu.RUnlock()
 	for _, kw := range l.keywords {
-		if strings.Contains(msgLower, kw) {
+		if matchWord(msgLower, kw.word, kw.mode) {
 			return true
 		}
 	}
 	return false
+}
+
+func matchWord(msg, word, mode string) bool {
+	if word == "" {
+		return false
+	}
+	if mode == "exact" {
+		return containsExact(msg, word)
+	}
+	return strings.Contains(msg, word)
+}
+
+func containsExact(msg, word string) bool {
+	idx := 0
+	for {
+		pos := strings.Index(msg[idx:], word)
+		if pos == -1 {
+			return false
+		}
+		start := idx + pos
+		end := start + len(word)
+		startOK := start == 0 || !isAlphanumeric(msg[start-1])
+		endOK := end == len(msg) || !isAlphanumeric(msg[end])
+		if startOK && endOK {
+			return true
+		}
+		idx = start + 1
+	}
+}
+
+func isAlphanumeric(b byte) bool {
+	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
 }
 
 func splitBatches(items []string, size int) [][]string {

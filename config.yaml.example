@@ -1,14 +1,19 @@
 twitch:
   access_token: "your-access-token"
   # username: optional_override
+  # match_mode: contains
   sub_gift_reply: "@{user} !!! bleedPurple CurseLit :>"
   refresh_interval: 18h
   batch_size: 95
+  keywords: []
+  # keywords:
+  #   - simple_keyword
+  #   - word: ExactMatch
+  #     mode: exact
   ignore_users:
     - streamelements
     - nightbot
   ignore_channels: []
-  keywords: []
 
 telegram:
   bot_token: "your-telegram-bot-token"
