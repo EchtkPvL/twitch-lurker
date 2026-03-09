@@ -14,11 +14,13 @@ import (
 type Config struct {
 	Twitch   TwitchConfig   `yaml:"twitch"`
 	Telegram TelegramConfig `yaml:"telegram"`
+	Verbose  bool           `yaml:"verbose"`
 }
 
 type TwitchConfig struct {
 	AccessToken     string        `yaml:"access_token"`
 	Username        string        `yaml:"username"`
+	SubGiftReply    string        `yaml:"sub_gift_reply"`
 	RefreshInterval time.Duration `yaml:"refresh_interval"`
 	BatchSize       int           `yaml:"batch_size"`
 	Keywords        []string      `yaml:"keywords"`
@@ -55,6 +57,9 @@ func main() {
 	}
 	if cfg.Twitch.RefreshInterval == 0 {
 		cfg.Twitch.RefreshInterval = 18 * time.Hour
+	}
+	if cfg.Twitch.SubGiftReply == "" {
+		cfg.Twitch.SubGiftReply = "@{user} !!! bleedPurple CurseLit :>"
 	}
 
 	cfg.Twitch.AccessToken = strings.TrimPrefix(cfg.Twitch.AccessToken, "oauth:")

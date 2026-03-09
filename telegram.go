@@ -36,9 +36,14 @@ func (t *Telegram) SendMention(channel, login, displayName, message string) {
 	t.send(text)
 }
 
-func (t *Telegram) SendSubGift(channel, from, reply string) {
-	text := fmt.Sprintf("Sub gift in %s from <code>%s</code>!\n<code>%s</code>",
-		channelLink(channel), escHTML(from), escHTML(reply))
+func (t *Telegram) SendSubGift(channel, login, displayName, replyTemplate string) {
+	copyName := displayName
+	if strings.ToLower(displayName) != strings.ToLower(login) {
+		copyName = login
+	}
+	reply := strings.ReplaceAll(replyTemplate, "{user}", copyName)
+	text := fmt.Sprintf("Gift Sub! %s from <code>%s</code>:\n<pre>%s</pre>",
+		channelLink(channel), escHTML(copyName), escHTML(reply))
 	t.send(text)
 }
 

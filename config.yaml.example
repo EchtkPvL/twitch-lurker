@@ -1,6 +1,7 @@
 twitch:
   access_token: "your-access-token"
   # username: optional_override
+  sub_gift_reply: "@{user} !!! bleedPurple CurseLit :>"
   refresh_interval: 18h
   batch_size: 95
   ignore_users:
@@ -12,3 +13,5 @@ twitch:
 telegram:
   bot_token: "your-telegram-bot-token"
   chat_id: 123456789
+
+verbose: false

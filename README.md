@@ -51,6 +51,7 @@ See `config.yaml.example` for all options:
 twitch:
   access_token: "your-access-token"
   # username: optional_override
+  sub_gift_reply: "@{user} !!! bleedPurple CurseLit :>"
   refresh_interval: 18h
   batch_size: 95
   ignore_users:
@@ -62,12 +63,15 @@ twitch:
 telegram:
   bot_token: "your-telegram-bot-token"
   chat_id: 123456789
+
+verbose: false
 ```
 
 | Field | Description | Default |
 |---|---|---|
 | `twitch.access_token` | Twitch OAuth access token | — |
 | `twitch.username` | Override username for mention matching | auto-detected |
+| `twitch.sub_gift_reply` | Reply template for sub gifts (`{user}` is replaced) | `@{user} !!! bleedPurple CurseLit :>` |
 | `twitch.keywords` | Additional keywords to match (case-insensitive) | `[]` |
 | `twitch.refresh_interval` | How often to re-fetch followed channels | `18h` |
 | `twitch.batch_size` | Max channels per IRC client | `95` |
@@ -75,6 +79,7 @@ telegram:
 | `twitch.ignore_channels` | Channels to ignore | `[]` |
 | `telegram.bot_token` | Telegram Bot API token | — |
 | `telegram.chat_id` | Telegram chat ID to send notifications to | — |
+| `verbose` | Log raw IRC messages on matches and sub gifts | `false` |
 
 ## License
 

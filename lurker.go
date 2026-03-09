@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -120,6 +119,9 @@ func (l *Lurker) setupClients(channels []string) {
 				return
 			}
 			log.Printf("[#%s] <%s>: %s", msg.Channel, msg.User.Name, msg.Message)
+			if l.cfg.Verbose {
+				log.Printf("[VERBOSE] %s", msg.Raw)
+			}
 			l.mu.RLock()
 			ignoreUser := l.ignoreUsers[strings.ToLower(msg.User.Name)]
 			ignoreChan := l.ignoreChannels[strings.ToLower(strings.TrimPrefix(msg.Channel, "#"))]
@@ -138,13 +140,14 @@ func (l *Lurker) setupClients(channels []string) {
 			if recipient != username {
 				return
 			}
-			from := msg.User.DisplayName
-			if from == "" {
-				from = msg.User.Name
+			log.Printf("[#%s] Sub gift from %s!", msg.Channel, msg.User.Name)
+			if l.cfg.Verbose {
+				log.Printf("[VERBOSE] %s", msg.Raw)
 			}
-			reply := fmt.Sprintf("Tausend Dank @%s !! bleedPurple CurseLit :>", from)
-			log.Printf("[#%s] Sub gift from %s!", msg.Channel, from)
-			l.tg.SendSubGift(msg.Channel, from, reply)
+			l.mu.RLock()
+			replyTpl := l.cfg.Twitch.SubGiftReply
+			l.mu.RUnlock()
+			l.tg.SendSubGift(msg.Channel, msg.User.Name, msg.User.DisplayName, replyTpl)
 		})
 
 		client.OnWhisperMessage(func(msg twitch.WhisperMessage) {
@@ -205,7 +208,13 @@ func (l *Lurker) reloadConfig() {
 		keywords[i] = strings.ToLower(strings.TrimSpace(k))
 	}
 
+	subGiftReply := newCfg.Twitch.SubGiftReply
+	if subGiftReply == "" {
+		subGiftReply = "@{user} !!! bleedPurple CurseLit :>"
+	}
+
 	l.mu.Lock()
+	l.cfg.Twitch.SubGiftReply = subGiftReply
 	l.keywords = keywords
 	l.ignoreUsers = ignoreUsers
 	l.ignoreChannels = ignoreChannels
