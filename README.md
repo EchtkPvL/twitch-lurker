@@ -57,6 +57,7 @@ twitch:
     - streamelements
     - nightbot
   ignore_channels: []
+  keywords: []
 
 telegram:
   bot_token: "your-telegram-bot-token"
@@ -67,6 +68,7 @@ telegram:
 |---|---|---|
 | `twitch.access_token` | Twitch OAuth access token | — |
 | `twitch.username` | Override username for mention matching | auto-detected |
+| `twitch.keywords` | Additional keywords to match (case-insensitive) | `[]` |
 | `twitch.refresh_interval` | How often to re-fetch followed channels | `18h` |
 | `twitch.batch_size` | Max channels per IRC client | `95` |
 | `twitch.ignore_users` | Usernames to ignore (bots, etc.) | `[]` |

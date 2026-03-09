@@ -20,6 +20,7 @@ type Lurker struct {
 	clients        []*twitch.Client
 	mu             sync.RWMutex
 	stopCh         chan struct{}
+	keywords       []string
 	ignoreUsers    map[string]bool
 	ignoreChannels map[string]bool
 }
@@ -33,11 +34,16 @@ func NewLurker(cfg Config, cfgPath string, tg *Telegram) *Lurker {
 	for _, c := range cfg.Twitch.IgnoreChannels {
 		ignoreChannels[strings.ToLower(strings.TrimSpace(c))] = true
 	}
+	keywords := make([]string, len(cfg.Twitch.Keywords))
+	for i, k := range cfg.Twitch.Keywords {
+		keywords[i] = strings.ToLower(strings.TrimSpace(k))
+	}
 	return &Lurker{
 		cfg:            cfg,
 		cfgPath:        cfgPath,
 		tg:             tg,
 		stopCh:         make(chan struct{}),
+		keywords:       keywords,
 		ignoreUsers:    ignoreUsers,
 		ignoreChannels: ignoreChannels,
 	}
@@ -109,7 +115,8 @@ func (l *Lurker) setupClients(channels []string) {
 		client := twitch.NewAnonymousClient()
 
 		client.OnPrivateMessage(func(msg twitch.PrivateMessage) {
-			if !strings.Contains(strings.ToLower(msg.Message), username) {
+			msgLower := strings.ToLower(msg.Message)
+			if !l.matchesKeywords(msgLower, username) {
 				return
 			}
 			log.Printf("[#%s] <%s>: %s", msg.Channel, msg.User.Name, msg.Message)
@@ -193,15 +200,21 @@ func (l *Lurker) reloadConfig() {
 		ignoreChannels[strings.ToLower(strings.TrimSpace(c))] = true
 	}
 
+	keywords := make([]string, len(newCfg.Twitch.Keywords))
+	for i, k := range newCfg.Twitch.Keywords {
+		keywords[i] = strings.ToLower(strings.TrimSpace(k))
+	}
+
 	l.mu.Lock()
+	l.keywords = keywords
 	l.ignoreUsers = ignoreUsers
 	l.ignoreChannels = ignoreChannels
 	l.mu.Unlock()
 
 	l.tg.Update(newCfg.Telegram.BotToken, newCfg.Telegram.ChatID)
 
-	log.Printf("config reloaded: %d ignored users, %d ignored channels",
-		len(ignoreUsers), len(ignoreChannels))
+	log.Printf("config reloaded: %d keywords, %d ignored users, %d ignored channels",
+		len(keywords), len(ignoreUsers), len(ignoreChannels))
 }
 
 func (l *Lurker) watchConfig() {
@@ -241,6 +254,20 @@ func (l *Lurker) watchConfig() {
 	} else {
 		log.Printf("watching %s for changes", l.cfgPath)
 	}
+}
+
+func (l *Lurker) matchesKeywords(msgLower, username string) bool {
+	if strings.Contains(msgLower, username) {
+		return true
+	}
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+	for _, kw := range l.keywords {
+		if strings.Contains(msgLower, kw) {
+			return true
+		}
+	}
+	return false
 }
 
 func splitBatches(items []string, size int) [][]string {

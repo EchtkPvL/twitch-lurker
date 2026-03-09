@@ -21,6 +21,7 @@ type TwitchConfig struct {
 	Username        string        `yaml:"username"`
 	RefreshInterval time.Duration `yaml:"refresh_interval"`
 	BatchSize       int           `yaml:"batch_size"`
+	Keywords        []string      `yaml:"keywords"`
 	IgnoreUsers     []string      `yaml:"ignore_users"`
 	IgnoreChannels  []string      `yaml:"ignore_channels"`
 	// resolved from token validation
