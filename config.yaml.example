@@ -10,6 +10,12 @@ twitch:
   #   - simple_keyword
   #   - word: ExactMatch
   #     mode: exact
+  # Lurk in top live streams. Omit this section to disable.
+  # top_streams:
+  #   languages: [de, en]       # optional, ISO 639-1 codes
+  #   game_ids: []               # optional, Twitch category IDs
+  #   batches: 2                 # default: 2 (2 * batch_size channels)
+  #   refresh_interval: 30m      # default: 30m
   ignore_users:
     - streamelements
     - nightbot

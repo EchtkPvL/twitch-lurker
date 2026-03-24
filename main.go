@@ -25,8 +25,9 @@ type TwitchConfig struct {
 	RefreshInterval time.Duration `yaml:"refresh_interval"`
 	BatchSize       int           `yaml:"batch_size"`
 	Keywords        []Keyword     `yaml:"keywords"`
-	IgnoreUsers     []string      `yaml:"ignore_users"`
-	IgnoreChannels  []string      `yaml:"ignore_channels"`
+	TopStreams      *TopStreamsConfig `yaml:"top_streams"`
+	IgnoreUsers     []string         `yaml:"ignore_users"`
+	IgnoreChannels  []string         `yaml:"ignore_channels"`
 	// resolved from token validation
 	ClientID string `yaml:"-"`
 	UserID   string `yaml:"-"`
@@ -52,6 +53,13 @@ func (k *Keyword) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	type plain Keyword
 	return unmarshal((*plain)(k))
+}
+
+type TopStreamsConfig struct {
+	Languages       []string      `yaml:"languages"`
+	GameIDs         []string      `yaml:"game_ids"`
+	Batches         int           `yaml:"batches"`
+	RefreshInterval time.Duration `yaml:"refresh_interval"`
 }
 
 type TelegramConfig struct {

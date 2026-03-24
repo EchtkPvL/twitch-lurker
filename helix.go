@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 )
 
 type tokenInfo struct {
@@ -86,6 +88,82 @@ func getFollowedChannels(clientID, accessToken, userID string) ([]string, error)
 
 		for _, ch := range result.Data {
 			channels = append(channels, ch.BroadcasterLogin)
+		}
+
+		if result.Pagination.Cursor == "" {
+			break
+		}
+		cursor = result.Pagination.Cursor
+	}
+
+	return channels, nil
+}
+
+type streamsResponse struct {
+	Data       []streamEntry `json:"data"`
+	Pagination struct {
+		Cursor string `json:"cursor"`
+	} `json:"pagination"`
+}
+
+type streamEntry struct {
+	UserLogin string `json:"user_login"`
+}
+
+func getTopStreams(clientID, accessToken string, languages, gameIDs []string, limit int) ([]string, error) {
+	params := url.Values{}
+	params.Set("first", strconv.Itoa(min(limit, 100)))
+	for _, lang := range languages {
+		params.Add("language", lang)
+	}
+	for _, gid := range gameIDs {
+		params.Add("game_id", gid)
+	}
+
+	var channels []string
+	cursor := ""
+
+	for len(channels) < limit {
+		p := params.Encode()
+		if cursor != "" {
+			p += "&after=" + cursor
+		}
+		reqURL := "https://api.twitch.tv/helix/streams?" + p
+
+		req, err := http.NewRequest("GET", reqURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Client-ID", clientID)
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+
+		if resp.StatusCode != 200 {
+			body, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			return nil, fmt.Errorf("twitch streams API returned %d: %s", resp.StatusCode, body)
+		}
+
+		var result streamsResponse
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			resp.Body.Close()
+			return nil, fmt.Errorf("failed to decode streams response: %w", err)
+		}
+		resp.Body.Close()
+
+		if len(result.Data) == 0 {
+			break
+		}
+
+		for _, s := range result.Data {
+			channels = append(channels, s.UserLogin)
+			if len(channels) >= limit {
+				break
+			}
 		}
 
 		if result.Pagination.Cursor == "" {

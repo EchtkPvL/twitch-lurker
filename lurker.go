@@ -13,15 +13,17 @@ import (
 )
 
 type Lurker struct {
-	cfg            Config
-	cfgPath        string
-	tg             *Telegram
-	clients        []*twitch.Client
-	mu             sync.RWMutex
-	stopCh         chan struct{}
-	keywords       []resolvedKeyword
-	ignoreUsers    map[string]bool
-	ignoreChannels map[string]bool
+	cfg              Config
+	cfgPath          string
+	tg               *Telegram
+	clients          []*twitch.Client
+	followedChannels []string
+	topChannels      []string
+	mu               sync.RWMutex
+	stopCh           chan struct{}
+	keywords         []resolvedKeyword
+	ignoreUsers      map[string]bool
+	ignoreChannels   map[string]bool
 }
 
 type resolvedKeyword struct {
@@ -65,13 +67,20 @@ func resolveKeywords(keywords []Keyword) []resolvedKeyword {
 }
 
 func (l *Lurker) Start() {
-	channels, err := getFollowedChannels(l.cfg.Twitch.ClientID, l.cfg.Twitch.AccessToken, l.cfg.Twitch.UserID)
+	followed, err := getFollowedChannels(l.cfg.Twitch.ClientID, l.cfg.Twitch.AccessToken, l.cfg.Twitch.UserID)
 	if err != nil {
 		log.Fatalf("failed to fetch followed channels: %v", err)
 	}
-	log.Printf("fetched %d followed channels", len(channels))
-	l.setupClients(channels)
+	log.Printf("fetched %d followed channels", len(followed))
+	l.followedChannels = followed
+
+	l.topChannels = l.fetchTopStreams()
+
+	l.reconnect()
 	go l.refreshLoop()
+	if l.cfg.Twitch.TopStreams != nil {
+		go l.topStreamsLoop()
+	}
 	go l.watchConfig()
 }
 
@@ -100,12 +109,74 @@ func (l *Lurker) refreshLoop() {
 
 func (l *Lurker) refresh() {
 	log.Printf("refreshing followed channels...")
-	channels, err := getFollowedChannels(l.cfg.Twitch.ClientID, l.cfg.Twitch.AccessToken, l.cfg.Twitch.UserID)
+	followed, err := getFollowedChannels(l.cfg.Twitch.ClientID, l.cfg.Twitch.AccessToken, l.cfg.Twitch.UserID)
 	if err != nil {
 		log.Printf("failed to refresh channels: %v", err)
 		return
 	}
-	log.Printf("fetched %d followed channels, reconnecting", len(channels))
+	log.Printf("fetched %d followed channels", len(followed))
+	l.followedChannels = followed
+	l.reconnect()
+}
+
+func (l *Lurker) topStreamsLoop() {
+	ts := l.cfg.Twitch.TopStreams
+	interval := ts.RefreshInterval
+	if interval == 0 {
+		interval = 30 * time.Minute
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			l.refreshTopStreams()
+		case <-l.stopCh:
+			return
+		}
+	}
+}
+
+func (l *Lurker) refreshTopStreams() {
+	channels := l.fetchTopStreams()
+	if len(channels) == len(l.topChannels) {
+		same := true
+		for i := range channels {
+			if channels[i] != l.topChannels[i] {
+				same = false
+				break
+			}
+		}
+		if same {
+			return
+		}
+	}
+	l.topChannels = channels
+	l.reconnect()
+}
+
+func (l *Lurker) fetchTopStreams() []string {
+	ts := l.cfg.Twitch.TopStreams
+	if ts == nil {
+		return nil
+	}
+	batches := ts.Batches
+	if batches <= 0 {
+		batches = 2
+	}
+	limit := batches * l.cfg.Twitch.BatchSize
+	channels, err := getTopStreams(l.cfg.Twitch.ClientID, l.cfg.Twitch.AccessToken, ts.Languages, ts.GameIDs, limit)
+	if err != nil {
+		log.Printf("failed to fetch top streams: %v", err)
+		return nil
+	}
+	log.Printf("fetched %d top stream channels", len(channels))
+	return channels
+}
+
+func (l *Lurker) reconnect() {
+	merged := l.mergeChannels()
+	log.Printf("reconnecting with %d total channels", len(merged))
 
 	l.mu.Lock()
 	for _, c := range l.clients {
@@ -114,7 +185,27 @@ func (l *Lurker) refresh() {
 	l.clients = nil
 	l.mu.Unlock()
 
-	l.setupClients(channels)
+	l.setupClients(merged)
+}
+
+func (l *Lurker) mergeChannels() []string {
+	seen := make(map[string]bool)
+	var merged []string
+	for _, ch := range l.followedChannels {
+		key := strings.ToLower(ch)
+		if !seen[key] {
+			seen[key] = true
+			merged = append(merged, ch)
+		}
+	}
+	for _, ch := range l.topChannels {
+		key := strings.ToLower(ch)
+		if !seen[key] {
+			seen[key] = true
+			merged = append(merged, ch)
+		}
+	}
+	return merged
 }
 
 func (l *Lurker) setupClients(channels []string) {

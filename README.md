@@ -10,6 +10,7 @@ A lightweight Go service that lurks in all your followed Twitch channels and sen
 - **Auto-discovery** — fetches your followed channels from the Twitch Helix API
 - **Periodic refresh** — re-fetches followed channels on a configurable interval (default: 18h)
 - **Ignore lists** — skip specific users or channels from triggering notifications
+- **Top streams** — optionally lurk in top live channels by language/game with independent refresh
 - **Batched connections** — splits channels across multiple IRC clients to stay within Twitch limits
 
 ## Setup
@@ -60,6 +61,12 @@ twitch:
   #   - simple_keyword
   #   - word: ExactMatch
   #     mode: exact
+  # Lurk in top live streams. Omit this section to disable.
+  # top_streams:
+  #   languages: [de, en]       # optional, ISO 639-1 codes
+  #   game_ids: []               # optional, Twitch category IDs
+  #   batches: 2                 # default: 2 (2 * batch_size channels)
+  #   refresh_interval: 30m      # default: 30m
   ignore_users:
     - streamelements
     - nightbot
@@ -81,6 +88,11 @@ verbose: false
 | `twitch.keywords` | Additional keywords to match (string or `{word, mode}`) | `[]` |
 | `twitch.refresh_interval` | How often to re-fetch followed channels | `18h` |
 | `twitch.batch_size` | Max channels per IRC client | `95` |
+| `twitch.top_streams` | Omit this section to disable top streams | disabled |
+| `twitch.top_streams.languages` | ISO 639-1 language codes to filter top streams | `[]` |
+| `twitch.top_streams.game_ids` | Twitch game/category IDs to filter | `[]` |
+| `twitch.top_streams.batches` | Number of extra batches of top streams to join | `2` |
+| `twitch.top_streams.refresh_interval` | How often to refresh top streams | `30m` |
 | `twitch.ignore_users` | Usernames to ignore (bots, etc.) | `[]` |
 | `twitch.ignore_channels` | Channels to ignore | `[]` |
 | `telegram.bot_token` | Telegram Bot API token | — |
