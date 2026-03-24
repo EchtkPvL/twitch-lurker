@@ -67,7 +67,10 @@ type TelegramConfig struct {
 	ChatID   int64  `yaml:"chat_id"`
 }
 
+var version = "dev"
+
 func main() {
+	log.Printf("twitch-lurker %s", version)
 	cfgPath := "config.yaml"
 	if v := os.Getenv("CONFIG_PATH"); v != "" {
 		cfgPath = v

@@ -9,7 +9,7 @@ logs:
 
 # Test Docker build (same as GitHub Actions release)
 test-build:
-	docker build -t twitch-lurker:test .
+	docker build --build-arg VERSION=dev -t twitch-lurker:test .
 	@echo "Image built successfully."
 
 # Tag and push release — triggers GitHub Actions to build and push to GHCR
