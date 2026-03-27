@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -13,17 +14,18 @@ import (
 )
 
 type Lurker struct {
-	cfg              Config
-	cfgPath          string
-	tg               *Telegram
-	clients          []*twitch.Client
-	followedChannels []string
-	topChannels      []string
-	mu               sync.RWMutex
-	stopCh           chan struct{}
-	keywords         []resolvedKeyword
-	ignoreUsers      map[string]bool
-	ignoreChannels   map[string]bool
+	cfg            Config
+	cfgPath        string
+	tg             *Telegram
+	followClients  []*twitch.Client
+	topClients     []*twitch.Client
+	topJoined      map[string]bool // currently joined top stream channels (lowercased)
+	followedSet    map[string]bool // followed channels (lowercased), used for dedup
+	mu             sync.RWMutex
+	stopCh         chan struct{}
+	keywords       []resolvedKeyword
+	ignoreUsers    map[string]bool
+	ignoreChannels map[string]bool
 }
 
 type resolvedKeyword struct {
@@ -44,6 +46,8 @@ func NewLurker(cfg Config, cfgPath string, tg *Telegram) *Lurker {
 		cfg:            cfg,
 		cfgPath:        cfgPath,
 		tg:             tg,
+		topJoined:      make(map[string]bool),
+		followedSet:    make(map[string]bool),
 		stopCh:         make(chan struct{}),
 		keywords:       resolveKeywords(cfg.Twitch.Keywords),
 		ignoreUsers:    ignoreUsers,
@@ -72,23 +76,28 @@ func (l *Lurker) Start() {
 		log.Fatalf("failed to fetch followed channels: %v", err)
 	}
 	log.Printf("fetched %d followed channels", len(followed))
-	l.followedChannels = followed
 
-	l.topChannels = l.fetchTopStreams()
+	l.followedSet = toSet(followed)
+	l.followClients = l.createClients(followed, "followed")
 
-	l.reconnect()
-	go l.refreshLoop()
 	if l.cfg.Twitch.TopStreams != nil {
+		topChannels := l.fetchTopStreams()
+		deduped := l.dedup(topChannels)
+		l.topClients = l.createClients(deduped, "top")
+		l.topJoined = toSet(deduped)
 		go l.topStreamsLoop()
 	}
+
+	go l.refreshLoop()
 	go l.watchConfig()
 }
 
 func (l *Lurker) Stop() {
 	close(l.stopCh)
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	for _, c := range l.clients {
+	for _, c := range l.followClients {
+		c.Disconnect()
+	}
+	for _, c := range l.topClients {
 		c.Disconnect()
 	}
 	log.Printf("all clients disconnected")
@@ -100,23 +109,34 @@ func (l *Lurker) refreshLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			l.refresh()
+			l.refreshFollowed()
 		case <-l.stopCh:
 			return
 		}
 	}
 }
 
-func (l *Lurker) refresh() {
+func (l *Lurker) refreshFollowed() {
 	log.Printf("refreshing followed channels...")
 	followed, err := getFollowedChannels(l.cfg.Twitch.ClientID, l.cfg.Twitch.AccessToken, l.cfg.Twitch.UserID)
 	if err != nil {
 		log.Printf("failed to refresh channels: %v", err)
 		return
 	}
-	log.Printf("fetched %d followed channels", len(followed))
-	l.followedChannels = followed
-	l.reconnect()
+	log.Printf("fetched %d followed channels, reconnecting followed pool", len(followed))
+
+	l.followedSet = toSet(followed)
+
+	// disconnect old followed clients
+	for _, c := range l.followClients {
+		c.Disconnect()
+	}
+	l.followClients = l.createClients(followed, "followed")
+
+	// also update top stream clients to dedup against new followed list
+	if l.cfg.Twitch.TopStreams != nil {
+		l.refreshTopStreams()
+	}
 }
 
 func (l *Lurker) topStreamsLoop() {
@@ -139,20 +159,49 @@ func (l *Lurker) topStreamsLoop() {
 
 func (l *Lurker) refreshTopStreams() {
 	channels := l.fetchTopStreams()
-	if len(channels) == len(l.topChannels) {
-		same := true
-		for i := range channels {
-			if channels[i] != l.topChannels[i] {
-				same = false
-				break
-			}
-		}
-		if same {
-			return
+	deduped := l.dedup(channels)
+	newSet := toSet(deduped)
+
+	// compute diff
+	var toJoin, toDepart []string
+	for ch := range newSet {
+		if !l.topJoined[ch] {
+			toJoin = append(toJoin, ch)
 		}
 	}
-	l.topChannels = channels
-	l.reconnect()
+	for ch := range l.topJoined {
+		if !newSet[ch] {
+			toDepart = append(toDepart, ch)
+		}
+	}
+
+	if len(toJoin) == 0 && len(toDepart) == 0 {
+		return
+	}
+
+	log.Printf("top streams: joining %d, departing %d channels", len(toJoin), len(toDepart))
+
+	// depart removed channels
+	for _, ch := range toDepart {
+		for _, c := range l.topClients {
+			c.Depart(ch)
+		}
+	}
+
+	// join new channels, spread across existing clients
+	if len(toJoin) > 0 {
+		if len(l.topClients) == 0 {
+			// no top clients yet, create them
+			l.topClients = l.createClients(deduped, "top")
+		} else {
+			for i, ch := range toJoin {
+				idx := i % len(l.topClients)
+				l.topClients[idx].Join(ch)
+			}
+		}
+	}
+
+	l.topJoined = newSet
 }
 
 func (l *Lurker) fetchTopStreams() []string {
@@ -174,46 +223,27 @@ func (l *Lurker) fetchTopStreams() []string {
 	return channels
 }
 
-func (l *Lurker) reconnect() {
-	merged := l.mergeChannels()
-	log.Printf("reconnecting with %d total channels", len(merged))
-
-	l.mu.Lock()
-	for _, c := range l.clients {
-		c.Disconnect()
-	}
-	l.clients = nil
-	l.mu.Unlock()
-
-	l.setupClients(merged)
-}
-
-func (l *Lurker) mergeChannels() []string {
+// dedup removes channels that are already in the followed set
+func (l *Lurker) dedup(channels []string) []string {
+	var result []string
 	seen := make(map[string]bool)
-	var merged []string
-	for _, ch := range l.followedChannels {
+	for _, ch := range channels {
 		key := strings.ToLower(ch)
-		if !seen[key] {
+		if !l.followedSet[key] && !seen[key] {
 			seen[key] = true
-			merged = append(merged, ch)
+			result = append(result, ch)
 		}
 	}
-	for _, ch := range l.topChannels {
-		key := strings.ToLower(ch)
-		if !seen[key] {
-			seen[key] = true
-			merged = append(merged, ch)
-		}
-	}
-	return merged
+	return result
 }
 
-func (l *Lurker) setupClients(channels []string) {
+// createClients creates IRC clients for the given channels and starts them
+func (l *Lurker) createClients(channels []string, pool string) []*twitch.Client {
+	if len(channels) == 0 {
+		return nil
+	}
 	batches := splitBatches(channels, l.cfg.Twitch.BatchSize)
-	log.Printf("setting up %d client(s) for %d channels", len(batches), len(channels))
-
-	l.mu.Lock()
-	defer l.mu.Unlock()
+	log.Printf("setting up %d %s client(s) for %d channels", len(batches), pool, len(channels))
 
 	username := strings.ToLower(l.cfg.Twitch.Username)
 	usernameMode := l.cfg.Twitch.MatchMode
@@ -221,8 +251,11 @@ func (l *Lurker) setupClients(channels []string) {
 		usernameMode = "contains"
 	}
 
+	var clients []*twitch.Client
+
 	for i, batch := range batches {
 		client := twitch.NewAnonymousClient()
+		clientTag := fmt.Sprintf("%s:%d", pool, i+1)
 
 		client.OnPrivateMessage(func(msg twitch.PrivateMessage) {
 			msgLower := strings.ToLower(msg.Message)
@@ -231,7 +264,7 @@ func (l *Lurker) setupClients(channels []string) {
 			}
 			log.Printf("[#%s] <%s>: %s", msg.Channel, msg.User.Name, msg.Message)
 			if l.cfg.Verbose {
-				log.Printf("[VERBOSE] %s", msg.Raw)
+				log.Printf("[VERBOSE] [%s] %s", clientTag, msg.Raw)
 			}
 			l.mu.RLock()
 			ignoreUser := l.ignoreUsers[strings.ToLower(msg.User.Name)]
@@ -253,7 +286,7 @@ func (l *Lurker) setupClients(channels []string) {
 			}
 			log.Printf("[#%s] Sub gift from %s!", msg.Channel, msg.User.Name)
 			if l.cfg.Verbose {
-				log.Printf("[VERBOSE] %s", msg.Raw)
+				log.Printf("[VERBOSE] [%s] %s", clientTag, msg.Raw)
 			}
 			l.mu.RLock()
 			replyTpl := l.cfg.Twitch.SubGiftReply
@@ -272,15 +305,17 @@ func (l *Lurker) setupClients(channels []string) {
 
 		client.Join(batch...)
 
-		go func(idx int) {
-			log.Printf("connecting client %d/%d (%d channels)", idx+1, len(batches), len(batch))
+		go func(tag string, n int) {
+			log.Printf("connecting %s (%d channels)", tag, n)
 			if err := client.Connect(); err != nil {
-				log.Printf("client %d error: %v", idx+1, err)
+				log.Printf("%s error: %v", tag, err)
 			}
-		}(i)
+		}(clientTag, len(batch))
 
-		l.clients = append(l.clients, client)
+		clients = append(clients, client)
 	}
+
+	return clients
 }
 
 func (l *Lurker) reloadConfig() {
@@ -417,6 +452,14 @@ func containsExact(msg, word string) bool {
 
 func isAlphanumeric(b byte) bool {
 	return (b >= 'a' && b <= 'z') || (b >= 'A' && b <= 'Z') || (b >= '0' && b <= '9') || b == '_'
+}
+
+func toSet(items []string) map[string]bool {
+	s := make(map[string]bool, len(items))
+	for _, item := range items {
+		s[strings.ToLower(item)] = true
+	}
+	return s
 }
 
 func splitBatches(items []string, size int) [][]string {
